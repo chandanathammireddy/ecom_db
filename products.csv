@@ -1,0 +1,5 @@
+name,description,price,category,stock,is_featured,status
+iPhone 14,Apple mobile phone,75000,mobile,10,1,active
+Samsung TV,Smart TV 55 inch,60000,electronics,5,0,active
+Nike Shoes,Running shoes,4500,footwear,20,0,active
+Laptop Bag,Business bag,2500,accessories,15,0,inactive
