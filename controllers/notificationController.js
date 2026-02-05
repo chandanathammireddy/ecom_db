@@ -1,33 +1,14 @@
-const db = require("../config/db");
+const Notification = require("../models/Notification");
 
 // GET user notifications
-const getUserNotifications = (req, res) => {
-  const userId = req.user.id;
-
-  db.query(
-    `
-    SELECT 
-      id,
-      title,
-      message,
-      is_read,
-      created_at
-    FROM notifications
-    WHERE user_id = ?
-    ORDER BY created_at DESC
-    `,
-    [userId],
-    (err, notifications) => {
-      if (err) return res.status(500).json(err);
-
-      res.json({
-        total: notifications.length,
-        notifications
-      });
-    }
-  );
+const getUserNotifications = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const notifications = await Notification.getByUserId(userId);
+    res.json({ total: notifications.length, notifications });
+  } catch (err) {
+    res.status(500).json(err);
+  }
 };
 
-module.exports = {
-  getUserNotifications
-};
+module.exports = { getUserNotifications };

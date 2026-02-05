@@ -1,165 +1,101 @@
-const db = require("../config/db");
+const Cart = require("../models/Cart");
 
 // GET user cart (create if not exists)
-const getUserCart = (req, res) => {
-  const userId = req.user.id;
+const getUserCart = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const carts = await Cart.getByUserId(userId);
 
-  db.query(
-    "SELECT * FROM carts WHERE user_id = ?",
-    [userId],
-    (err, carts) => {
-      if (err) return res.status(500).json(err);
-
-      if (carts.length > 0) {
-        return res.json({
-          cartId: carts[0].id,
-          items: []
-        });
-      }
-
-      db.query(
-        "INSERT INTO carts (user_id) VALUES (?)",
-        [userId],
-        (err, result) => {
-          if (err) return res.status(500).json(err);
-
-          res.json({
-            cartId: result.insertId,
-            items: []
-          });
-        }
-      );
+    if (carts.length > 0) {
+      return res.json({ cartId: carts[0].id, items: [] });
     }
-  );
+
+    const result = await Cart.create(userId);
+    res.json({ cartId: result.insertId, items: [] });
+  } catch (err) {
+    res.status(500).json(err);
+  }
 };
 
 // ADD item to cart
-const addToCart = (req, res) => {
-  const userId = req.user.id;
-  const { productId, quantity } = req.body;
+const addToCart = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { productId, quantity } = req.body;
 
-  if (!productId) {
-    return res.status(400).json({ message: "Product ID is required" });
-  }
-
-  const qty = quantity || 1;
-
-  db.query(
-    "SELECT * FROM carts WHERE user_id = ?",
-    [userId],
-    (err, carts) => {
-      if (err) return res.status(500).json(err);
-
-      if (carts.length === 0) {
-        db.query(
-          "INSERT INTO carts (user_id) VALUES (?)",
-          [userId],
-          (err, result) => {
-            if (err) return res.status(500).json(err);
-            addItem(result.insertId);
-          }
-        );
-      } else {
-        addItem(carts[0].id);
-      }
+    if (!productId) {
+      return res.status(400).json({ message: "Product ID is required" });
     }
-  );
 
-  function addItem(cartId) {
-    db.query(
-      "SELECT * FROM cart_items WHERE cart_id = ? AND product_id = ?",
-      [cartId, productId],
-      (err, items) => {
-        if (err) return res.status(500).json(err);
+    const qty = quantity || 1;
 
-        if (items.length > 0) {
-          db.query(
-            "UPDATE cart_items SET quantity = quantity + ? WHERE id = ?",
-            [qty, items[0].id],
-            () => res.json({ message: "Cart updated" })
-          );
-        } else {
-          db.query(
-            "INSERT INTO cart_items (cart_id, product_id, quantity) VALUES (?, ?, ?)",
-            [cartId, productId, qty],
-            () => res.json({ message: "Item added to cart" })
-          );
-        }
-      }
-    );
+    let cartId;
+    const carts = await Cart.getByUserId(userId);
+
+    if (carts.length === 0) {
+      const result = await Cart.create(userId);
+      cartId = result.insertId;
+    } else {
+      cartId = carts[0].id;
+    }
+
+    // Check if item exists
+    const items = await Cart.getItem(cartId, productId);
+
+    if (items.length > 0) {
+      await Cart.updateItemQuantity(items[0].id, qty);
+      res.json({ message: "Cart updated" });
+    } else {
+      await Cart.addItem(cartId, productId, qty);
+      res.json({ message: "Item added to cart" });
+    }
+
+  } catch (err) {
+    res.status(500).json(err);
   }
 };
 
 // UPDATE cart item
-const updateCartItemQuantity = (req, res) => {
-  const userId = req.user.id;
-  const { productId, quantity } = req.body;
+const updateCartItemQuantity = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { productId, quantity } = req.body;
 
-  if (!productId || quantity === undefined) {
-    return res.status(400).json({ message: "productId and quantity required" });
+    if (!productId || quantity === undefined) {
+      return res.status(400).json({ message: "productId and quantity required" });
+    }
+
+    const carts = await Cart.getByUserId(userId);
+    if (carts.length === 0) return res.status(404).json({ message: "Cart not found" });
+
+    const cartId = carts[0].id;
+    if (quantity === 0) {
+      await Cart.removeItem(cartId, productId);
+      res.json({ message: "Item removed" });
+    } else {
+      await Cart.setItemQuantity(cartId, productId, quantity);
+      res.json({ message: "Quantity updated" });
+    }
+  } catch (err) {
+    res.status(500).json(err);
   }
-
-  db.query(
-    "SELECT * FROM carts WHERE user_id = ?",
-    [userId],
-    (err, carts) => {
-      if (err) return res.status(500).json(err);
-      if (carts.length === 0) {
-        return res.status(404).json({ message: "Cart not found" });
-      }
-
-      const cartId = carts[0].id;
-
-      if (quantity === 0) {
-        db.query(
-          "DELETE FROM cart_items WHERE cart_id = ? AND product_id = ?",
-          [cartId, productId],
-          () => res.json({ message: "Item removed" })
-        );
-      } else {
-        db.query(
-          "UPDATE cart_items SET quantity = ? WHERE cart_id = ? AND product_id = ?",
-          [quantity, cartId, productId],
-          () => res.json({ message: "Quantity updated" })
-        );
-      }
-    }
-  );
 };
 
 // Get cart items count
-// Get cart items count
-const getCartItemCount = (req, res) => {
-  const userId = req.user.id;
+const getCartItemCount = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const carts = await Cart.getByUserId(userId);
+    if (carts.length === 0) return res.json({ count: 0 });
 
-  db.query(
-    "SELECT id FROM carts WHERE user_id = ?",
-    [userId],
-    (err, carts) => {
-      if (err) return res.status(500).json(err);
-
-      if (carts.length === 0) {
-        return res.json({ count: 0 });
-      }
-
-      const cartId = carts[0].id;
-
-      db.query(
-        "SELECT SUM(quantity) AS count FROM cart_items WHERE cart_id = ?",
-        [cartId],
-        (err, result) => {
-          if (err) return res.status(500).json(err);
-
-          res.json({
-            count: result[0].count || 0
-          });
-        }
-      );
-    }
-  );
+    const cartId = carts[0].id;
+    const result = await Cart.countItems(cartId);
+    res.json({ count: result[0].count || 0 });
+  } catch (err) {
+    res.status(500).json(err);
+  }
 };
 
-// ✅ EXPORT EVERYTHING (ONLY ONE EXPORT STYLE)
 module.exports = {
   getUserCart,
   addToCart,

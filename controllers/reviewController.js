@@ -1,163 +1,86 @@
-const db = require("../config/db");
+const Review = require("../models/Review");
 
 // ADD / UPDATE product review
-const addReview = (req, res) => {
-  const userId = req.user.id;
-  const { productId, rating, comment } = req.body;
+const addReview = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { productId, rating, comment } = req.body;
 
-  if (!productId || !rating) {
-    return res.status(400).json({ message: "Product ID and rating are required" });
-  }
+    if (!productId || !rating) {
+      return res.status(400).json({ message: "Product ID and rating are required" });
+    }
 
-  const query = `
-    INSERT INTO reviews (user_id, product_id, rating, comment)
-    VALUES (?, ?, ?, ?)
-    ON DUPLICATE KEY UPDATE
-      rating = VALUES(rating),
-      comment = VALUES(comment)
-  `;
-
-  db.query(query, [userId, productId, rating, comment], (err) => {
-    if (err) return res.status(500).json(err);
-
+    await Review.upsert({ userId, productId, rating, comment });
     res.json({ message: "Review submitted successfully" });
-  });
+  } catch (err) {
+    res.status(500).json(err);
+  }
 };
 
 // GET product reviews
-const getProductReviews = (req, res) => {
-  const productId = req.params.id;
-
-  const query = `
-    SELECT 
-      r.id,
-      u.name AS user,
-      r.rating,
-      r.comment,
-      r.created_at
-    FROM reviews r
-    JOIN users u ON r.user_id = u.id
-    WHERE r.product_id = ?
-    ORDER BY r.created_at DESC
-  `;
-
-  db.query(query, [productId], (err, reviews) => {
-    if (err) return res.status(500).json(err);
-
-    res.json({
-      total: reviews.length,
-      reviews
-    });
-  });
+const getProductReviews = async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const reviews = await Review.getByProductId(productId);
+    res.json({ total: reviews.length, reviews });
+  } catch (err) {
+    res.status(500).json(err);
+  }
 };
 
 // UPDATE own review
-const updateOwnReview = (req, res) => {
-  const userId = req.user.id;
-  const { productId, rating, comment } = req.body;
+const updateOwnReview = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { productId, rating, comment } = req.body;
+    if (!productId) return res.status(400).json({ message: "Product ID is required" });
 
-  if (!productId) {
-    return res.status(400).json({ message: "Product ID is required" });
+    const result = await Review.updateOwn(userId, productId, rating, comment);
+    if (result.affectedRows === 0) return res.status(404).json({ message: "Review not found" });
+    res.json({ message: "Review updated successfully" });
+  } catch (err) {
+    res.status(500).json(err);
   }
-
-  db.query(
-    `UPDATE reviews
-     SET rating = ?, comment = ?
-     WHERE user_id = ? AND product_id = ?`,
-    [rating, comment, userId, productId],
-    (err, result) => {
-      if (err) return res.status(500).json(err);
-
-      if (result.affectedRows === 0) {
-        return res.status(404).json({ message: "Review not found" });
-      }
-
-      res.json({ message: "Review updated successfully" });
-    }
-  );
 };
-
-
-
 
 // GET all reviews (ADMIN)
-const getAllReviews = (req, res) => {
-  db.query(
-    `SELECT 
-       r.id,
-       r.rating,
-       r.comment,
-       r.created_at,
-       p.name AS product_name,
-       u.name AS user_name
-     FROM reviews r
-     JOIN products p ON r.product_id = p.id
-     JOIN users u ON r.user_id = u.id
-     ORDER BY r.id DESC`,
-    (err, reviews) => {
-      if (err) return res.status(500).json(err);
-
-      res.json({
-        total: reviews.length,
-        reviews
-      });
-    }
-  );
+const getAllReviews = async (req, res) => {
+  try {
+    const reviews = await Review.getAll();
+    res.json({ total: reviews.length, reviews });
+  } catch (err) {
+    res.status(500).json(err);
+  }
 };
-
 
 // DELETE any review (ADMIN)
-const deleteReview = (req, res) => {
-  const reviewId = req.params.id;
-
-  db.query(
-    "DELETE FROM reviews WHERE id = ?",
-    [reviewId],
-    (err, result) => {
-      if (err) return res.status(500).json(err);
-
-      if (result.affectedRows === 0) {
-        return res.status(404).json({ message: "Review not found" });
-      }
-
-      res.json({ message: "Review deleted successfully" });
-    }
-  );
+const deleteReview = async (req, res) => {
+  try {
+    const reviewId = req.params.id;
+    const result = await Review.delete(reviewId);
+    if (result.affectedRows === 0) return res.status(404).json({ message: "Review not found" });
+    res.json({ message: "Review deleted successfully" });
+  } catch (err) {
+    res.status(500).json(err);
+  }
 };
-
-
 
 // APPROVE or REJECT review (ADMIN)
-const updateReviewStatus = (req, res) => {
-  const reviewId = req.params.id;
-  const { status } = req.body;
-
-  if (!["approved", "rejected"].includes(status)) {
-    return res.status(400).json({
-      message: "Status must be 'approved' or 'rejected'"
-    });
-  }
-
-  db.query(
-    "UPDATE reviews SET status = ? WHERE id = ?",
-    [status, reviewId],
-    (err, result) => {
-      if (err) return res.status(500).json(err);
-
-      if (result.affectedRows === 0) {
-        return res.status(404).json({ message: "Review not found" });
-      }
-
-      res.json({
-        message: `Review ${status} successfully`
-      });
+const updateReviewStatus = async (req, res) => {
+  try {
+    const reviewId = req.params.id;
+    const { status } = req.body;
+    if (!["approved", "rejected"].includes(status)) {
+      return res.status(400).json({ message: "Status must be 'approved' or 'rejected'" });
     }
-  );
+
+    const result = await Review.updateStatus(reviewId, status);
+    if (result.affectedRows === 0) return res.status(404).json({ message: "Review not found" });
+    res.json({ message: `Review ${status} successfully` });
+  } catch (err) {
+    res.status(500).json(err);
+  }
 };
-
-
-
-
 
 module.exports = {
   addReview,
@@ -166,5 +89,4 @@ module.exports = {
   getAllReviews,
   deleteReview,
   updateReviewStatus
-
 };
