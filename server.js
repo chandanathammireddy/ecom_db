@@ -28,3 +28,8 @@ app.use("/api/wishlist", wishlistRoutes);
 const orderRoutes = require("./routes/orderRoutes");
 
 app.use("/api/orders", orderRoutes);
+
+const webhookRoutes = require("./routes/webhookRoutes");
+
+app.use(express.json()); // IMPORTANT
+app.use("/api/webhook", webhookRoutes);

@@ -27,6 +27,7 @@ app.use("/api/addresses", addressRoutes);
 app.use("/api/coupons", couponRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api", contactRoutes);
+app.use("/api/webhooks", require("./routes/webhookRoutes"));
 
 
 
